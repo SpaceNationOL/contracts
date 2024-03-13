@@ -27,9 +27,10 @@ contract StakeNFT is Context {
     event StakeEV(
         address indexed staker,
         uint256 indexed id,
-        uint256 indexed timestamp
+        uint256 indexed timestamp,
+        uint256 price
     );
-    event Claim(
+    event Airdrop(
         address indexed staker,
         uint256 indexed nftAmount,
         uint256 indexed transferAmount
@@ -48,23 +49,25 @@ contract StakeNFT is Context {
     uint256 public GTDStart; ///The start time of the GTD whitelist staking period.
     uint256 public GTDEnd; ///The end time of the GTD whitelist staking period.
     uint256 public BackupEnd; ///The end time of the backup staking period.
-    uint256 public raffleTime; /// The time when the raffle will be executed.
-    uint256 public operationTime; /// The time when the user to cliam/refund.
+    uint256 public revealRaffle; /// The time when the raffle will be revealed.
+    uint256 public refundTime; /// The time when the user to airdrop/refund.
     uint256 private ExtendAllstakeEnd;
     uint256 private ExtendGTDEnd;
     uint256 private ExtendBackupEnd;
     uint256 private ExtendRaffleEnd;
-    uint256 private ExtendOperationTime;
-
+    uint256 private ExtendRefundTime;
     uint256 public raffleCount; ///The number of NFTs that will be awarded to stakers during the raffle.
     uint256 public remainRaffleCount; ///The number of NFTs that will be awarded to stakers during the raffle.
     uint256 public avaWLCount; ///The number of NFTs that are available for Backup staking.
-    uint256[] private _publicStakesId; ///The array of staking ids in the allstakeStart~allstakeEnd period.
-    uint256[] private _whiteStakesId; ///The array of staking ids in the GTDStart~BackupEnd period.
     uint256 public constant WHITESTAKEPRICE = 0.3 ether;
     uint256 public constant PUBLICSTAKEPRICE = 0.4 ether;
     uint256 public constant ONEDAY = 24 hours;
+    uint256 public airdropIndex;
+    address[] public stakes;
+    uint256[] private _publicStakesId; ///The array of staking ids in the allstakeStart~allstakeEnd period.
+    uint256[] private _whiteStakesId; ///The array of staking ids in the GTDStart~BackupEnd period.
 
+    mapping(address => bool) public inStakes; ///Maps sender to whether it is in the staking array.
     mapping(address => uint256[]) private userStakes; ///Maps stakers to their staking IDs.
     mapping(uint256 => Stake) public stakeIdInfo; ///Maps staking IDs to their respective staking information.
     mapping(address => bool) public hasClaimedNFT; ///Maps stakers to whether they have claimed their NFTs.
@@ -86,8 +89,8 @@ contract StakeNFT is Context {
         uint256 _GTDStart,
         uint256 _GTDEnd,
         uint256 _BackupEnd,
-        uint256 _raffleTime,
-        uint256 _operationTime
+        uint256 _revealRaffle,
+        uint256 _refundTime
     ) {
         require(
             _allstakeEnd >= _allstakeStart,
@@ -95,10 +98,13 @@ contract StakeNFT is Context {
         );
         require(_GTDEnd >= _GTDStart, "GTDEnd less than GTDStart");
         require(_BackupEnd >= _GTDEnd, "BackupEnd less than GTDEnd");
-        require(_raffleTime >= _BackupEnd, "raffleTime less than BackupEnd");
         require(
-            _operationTime >= _raffleTime,
-            "operationTime less than raffleTime"
+            _revealRaffle >= _BackupEnd,
+            "revealRaffle less than BackupEnd"
+        );
+        require(
+            _refundTime >= _revealRaffle,
+            "refundTime less than revealRaffle"
         );
         manager = _manager;
         nftAddress = _nftAddress;
@@ -114,10 +120,10 @@ contract StakeNFT is Context {
         ExtendGTDEnd = ONEDAY + GTDEnd;
         BackupEnd = _BackupEnd;
         ExtendBackupEnd = ONEDAY + BackupEnd;
-        raffleTime = _raffleTime;
-        ExtendRaffleEnd = ONEDAY + raffleTime;
-        operationTime = _operationTime;
-        ExtendOperationTime = operationTime + operationTime;
+        revealRaffle = _revealRaffle;
+        ExtendRaffleEnd = ONEDAY + revealRaffle;
+        refundTime = _refundTime;
+        ExtendRefundTime = refundTime + refundTime;
     }
 
     modifier onlyManager() {
@@ -153,18 +159,18 @@ contract StakeNFT is Context {
         BackupEnd = _t;
     }
 
-    /// @notice  update raffleTime.
+    /// @notice  update revealRaffle.
     function setRaffleTime(uint256 _t) external onlyManager {
         require(_t <= ExtendRaffleEnd, "exceed maximum period");
         require(_t >= BackupEnd, "must more than BackupEnd time");
-        raffleTime = _t;
+        revealRaffle = _t;
     }
 
-    /// @notice  update raffleTime.
+    /// @notice  update revealRaffle.
     function setOperationTime(uint256 _t) external onlyManager {
-        require(_t <= ExtendOperationTime, "exceed maximum period");
-        require(_t >= raffleTime, "must more than raffleTime");
-        operationTime = _t;
+        require(_t <= ExtendRefundTime, "exceed maximum period");
+        require(_t >= revealRaffle, "must more than revealRaffle");
+        refundTime = _t;
     }
 
     /// @notice  set non-deplicated GTD whitelist address and their allowed staking tickets.
@@ -220,21 +226,24 @@ contract StakeNFT is Context {
             userStakes[_msgSender()].push(newId);
             _publicStakesId.push(newId);
             stakeIdInfo[newId] = newStake;
-            emit StakeEV(_msgSender(), newId, block.timestamp);
+            emit StakeEV(
+                _msgSender(),
+                newId,
+                block.timestamp,
+                PUBLICSTAKEPRICE
+            );
+        }
+        if (!inStakes[_msgSender()]) {
+            inStakes[_msgSender()] = true;
+            stakes.push(_msgSender());
         }
     }
 
     /// @notice  Allows users who have been GTDwhitelisted to stake NFTs during a separate period of time.
     function GTDStake() external payable {
-        require(
-            block.timestamp >= GTDStart,
-            "StakeNFT: GTD not start"
-        );
+        require(block.timestamp >= GTDStart, "StakeNFT: GTD not start");
         require(block.timestamp < GTDEnd, "StakeNFT: GTD ended");
-        require(
-            GTDAddress[_msgSender()],
-            "StakeNFT: not GTD address"
-        );
+        require(GTDAddress[_msgSender()], "StakeNFT: not GTD address");
         uint256 tickets = GTDTickets[_msgSender()];
         require(tickets != 0, "StakeNFT: no qualifications left");
         uint256 value = msg.value;
@@ -269,25 +278,20 @@ contract StakeNFT is Context {
             _whiteStakesId.push(newId);
             stakeIdInfo[newId] = newStake;
             avaWLCount -= 1;
-            emit StakeEV(_msgSender(), newId, block.timestamp);
+            emit StakeEV(_msgSender(), newId, block.timestamp, WHITESTAKEPRICE);
+        }
+        if (!inStakes[_msgSender()]) {
+            inStakes[_msgSender()] = true;
+            stakes.push(_msgSender());
         }
     }
 
     /// @notice  Allows users who have been Backupwhitelisted to stake NFTs during a separate period of time.
     function backupStake() external payable {
         require(avaWLCount != 0, "StakeNFT: no stake qualifications left");
-        require(
-            block.timestamp >= GTDEnd,
-            "StakeNFT: Backup not start"
-        );
-        require(
-            block.timestamp <= BackupEnd,
-            "StakeNFT: Backup ended"
-        );
-        require(
-            BackupAddress[_msgSender()],
-            "StakeNFT: not Backup address"
-        );
+        require(block.timestamp >= GTDEnd, "StakeNFT: Backup not start");
+        require(block.timestamp <= BackupEnd, "StakeNFT: Backup ended");
+        require(BackupAddress[_msgSender()], "StakeNFT: not Backup address");
 
         uint256 value = msg.value;
         require(value == WHITESTAKEPRICE, "StakeNFT: invalid staking value");
@@ -308,7 +312,11 @@ contract StakeNFT is Context {
         userStakes[_msgSender()].push(newId);
         _whiteStakesId.push(newId);
         stakeIdInfo[newId] = newStake;
-        emit StakeEV(_msgSender(), newId, block.timestamp);
+        if (!inStakes[_msgSender()]) {
+            inStakes[_msgSender()] = true;
+            stakes.push(_msgSender());
+        }
+        emit StakeEV(_msgSender(), newId, block.timestamp, WHITESTAKEPRICE);
     }
 
     /// @notice  Executes a raffle to determine which stakers will win NFTs based on tht input seeds.
@@ -356,11 +364,11 @@ contract StakeNFT is Context {
         returns (ClaimInfo memory info)
     {
         require(
-            block.timestamp >= raffleTime,
+            block.timestamp >= revealRaffle,
             "StakeNFT: Not check rewards time"
         );
-        info.hasClaimedNFT = hasClaimedNFT[_a];
         info.hasRefundedETH = hasRefundedETH[_a];
+        info.hasClaimedNFT = hasClaimedNFT[_a];
         info.refundAmount = 0;
         info.nftCount = 0;
         info.transferAmount = 0;
@@ -378,38 +386,50 @@ contract StakeNFT is Context {
         }
     }
 
-    /// @notice   Allows stakers to claim their NFTs if they have won the raffle.
-    function claimNFT() external {
-        require(block.timestamp >= operationTime, "StakeNFT: Not claims time");
-        address staker = _msgSender();
-        ClaimInfo memory info = _claimInfo(staker);
+    /// @notice   Airdrop stakers NFTs if they have won the raffle.
+    function airdrop(uint256 _count) external {
+        require(block.timestamp >= refundTime, "StakeNFT: Not claims time");
+        uint256 count = airdropIndex + _count >= stakes.length
+            ? stakes.length - airdropIndex
+            : _count;
+        for (uint256 j = airdropIndex; j < count; j++) {
+            address staker = stakes[j];
+            ClaimInfo memory info = _claimInfo(staker);
+            if (!info.hasClaimedNFT) {
+                hasClaimedNFT[staker] = true;
 
-        require(!info.hasClaimedNFT, "StakeNFT: has claimed");
-        require(info.nftCount > 0, "StakeNFT: nothing to claim");
+                if (info.transferAmount != 0) {
+                    Address.sendValue(
+                        payable(revenueWallet),
+                        info.transferAmount
+                    );
+                }
+                
+                if (info.nftCount != 0) {
+                    bytes4 SELECTOR = bytes4(
+                        keccak256(bytes("nftcallermint(address,uint256)"))
+                    );
 
-        hasClaimedNFT[staker] = true;
+                    (bool nftcallsuccess, bytes memory data) = nftAddress.call(
+                        abi.encodeWithSelector(SELECTOR, staker, info.nftCount)
+                    );
 
-        Address.sendValue(payable(revenueWallet), info.transferAmount);
+                    require(
+                        nftcallsuccess &&
+                            (data.length == 0 || abi.decode(data, (bool))),
+                        "Mint_NFT_Faliled"
+                    );
+                }
 
-        bytes4 SELECTOR = bytes4(
-            keccak256(bytes("nftcallermint(address,uint256)"))
-        );
-
-        (bool nftcallsuccess, bytes memory data) = nftAddress.call(
-            abi.encodeWithSelector(SELECTOR, staker, info.nftCount)
-        );
-
-        require(
-            nftcallsuccess && (data.length == 0 || abi.decode(data, (bool))),
-            "Mint_NFT_Faliled"
-        );
-
-        emit Claim(staker, info.nftCount, info.transferAmount);
+                emit Airdrop(staker, info.nftCount, info.transferAmount);
+            }
+        }
+        airdropIndex += count;
     }
 
     /// @notice   Allows stakers to receive a refund if they have not won the raffle.
     function refund() external {
-        require(block.timestamp >= operationTime, "StakeNFT: Not refund time");
+        require(block.timestamp >= refundTime, "StakeNFT: Not refund time");
         address staker = _msgSender();
         ClaimInfo memory info = _claimInfo(staker);
 
@@ -430,12 +450,12 @@ contract StakeNFT is Context {
     function getUserStakes(address _address)
         external
         view
-        returns (Stake[] memory stakes)
+        returns (Stake[] memory _stakes)
     {
         uint256[] memory stakeId = userStakes[_address];
-        stakes = new Stake[](stakeId.length);
+        _stakes = new Stake[](stakeId.length);
         for (uint256 j = 0; j < stakeId.length; j++) {
-            stakes[j] = stakeIdInfo[stakeId[j]];
+            _stakes[j] = stakeIdInfo[stakeId[j]];
         }
     }
 
@@ -465,7 +485,7 @@ contract StakeNFT is Context {
 
     function getRaffledId() external view returns (uint256[] memory) {
         require(
-            block.timestamp >= raffleTime,
+            block.timestamp >= revealRaffle,
             "StakeNFT: Not check rewards time"
         );
         uint256[] memory raffleId = new uint256[](raffleCount);
