@@ -528,7 +528,7 @@ contract StakeNFT is Context, ReentrancyGuard {
         uint256[] memory raffleId = new uint256[](counts);
         uint256 index;
 
-        for (uint256 j = start; j < counts; j++) {
+        for (uint256 j = start; j < ncount; j++) {
             uint256 stakeid = _publicStakesId[j];
             if (raffleWon[stakeid]) {
                 raffleId[index] = stakeid;
