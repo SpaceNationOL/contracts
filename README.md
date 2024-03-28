@@ -8,4 +8,4 @@
 - [Security Audit Report by CertiK](https://raw.githubusercontent.com/SpaceNationOL/contracts/main/audits/prime-navigator/REP-final-20240325T135912Z.pdf)
 
 ### NFT Contract
-- [0x1D7Fd49d1d46c7A6Bea0502f63e66BAC1a8830eb](https://etherscan.io/address/0x1d7fd49d1d46c7a6bea0502f63e66bac1a8830eb)
+- [0x464868685F5ED7cc8260840a8a0e797F48b0Dbd0](https://etherscan.io/address/0x464868685F5ED7cc8260840a8a0e797F48b0Dbd0)
