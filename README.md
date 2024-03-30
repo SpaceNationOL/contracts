@@ -7,5 +7,3 @@
 - [Source Code](https://raw.githubusercontent.com/SpaceNationOL/contracts/main/contracts/prime-navigator/AuctionNFT.sol)
 - [Security Audit Report by CertiK](https://raw.githubusercontent.com/SpaceNationOL/contracts/main/audits/prime-navigator/REP-final-20240325T135912Z.pdf)
 
-### NFT Contract
-- [0x464868685F5ED7cc8260840a8a0e797F48b0Dbd0](https://etherscan.io/address/0x464868685F5ED7cc8260840a8a0e797F48b0Dbd0)
