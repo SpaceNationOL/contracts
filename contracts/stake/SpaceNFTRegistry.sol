@@ -51,7 +51,7 @@ contract SpaceNFTRegistry is Ownable, ReentrancyGuard {
         uint256 timestamp,
         uint256[] nftId
     );
-    event UnRegister(address nft, address register, uint256[] nftId);
+    event Unregister(address nft, address register, uint256[] nftId);
     event Renewal(
         address nft,
         address register,
@@ -184,7 +184,7 @@ contract SpaceNFTRegistry is Ownable, ReentrancyGuard {
     /**
      * @notice For Unregistration, the sender must be the address that registed  the NFTID. They can unregister the NFTID if any switches are enabled for him, or if the maximum between registration and banlist durations have ended. Unregistration will delete the banlist state for the player.
      */
-    function unRegistration(address nft, uint256[] calldata nftIds)
+    function unregistration(address nft, uint256[] calldata nftIds)
         external
         nonReentrant
     {
@@ -210,7 +210,7 @@ contract SpaceNFTRegistry is Ownable, ReentrancyGuard {
             IERC721(nft).safeTransferFrom(address(this), unregister, nftId);
         }
 
-        emit UnRegister(nft, unregister, nftIds);
+        emit Unregister(nft, unregister, nftIds);
     }
 
     /**
