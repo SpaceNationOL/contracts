@@ -7,69 +7,70 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-interface NFTBurn {
+interface SpaceNFTBurn {
     function burn(uint256 tokenId) external;
 }
 
-contract stakeShip is Ownable, ReentrancyGuard {
+contract SpaceNFTRegistry is Ownable, ReentrancyGuard {
     using ECDSA for bytes32;
-    // The program address for implementing black and redeem.
-    address miner;
-    //The minimum staking period is 3 days, and the maximum is 365 days.
+    //The minimum registration period is 3 days, and the maximum is 365 days.
     uint64 floorlimit = 3 days;
     uint64 ceillimit = 365 days;
     // The default expiration time for signatures is 300 seconds (5 minutes).
     uint32 private expireTime = 300;
     uint32 limitIdLen = 50;
     //The maximum duration of blacking is 90 days.
-    uint64 constant BLACKCEIL = 90 days;
-
-    // The global switch that controls the entire system. When activated, all staked assets can be withdrawn regardless of the normal staking conditions.
+    uint64 constant BANCEIL = 90 days;
+    // The global switch that controls the entire system. When activated, all registed  assets can be withdrawn regardless of the normal registration conditions.
     uint256 globalswitch;
     // The mask of the lower 160 bits for addresses.
     uint256 private constant _BITMASK_ADDRESS = (1 << 160) - 1;
     // The bit position of `startTimestamp` in packed ownership.
     uint256 private constant _BITPOS_START_TIMESTAMP = 160;
-
     // The signature address.
     address private _cosigner = 0xDa801D3cCE8626Bd55387554Bb3BE500681Cb49C;
-    // The address-specific switch. When this is turned on, the associated address can withdraw their staked assets regardless of the normal conditions.
+    // The program address for implementing black and redeem.
+    address miner = 0xDa801D3cCE8626Bd55387554Bb3BE500681Cb49C;
+    // The address-specific switch. When this is turned on, the associated address can withdraw their registed assets regardless of the normal conditions.
     mapping(address => uint256) addrswitch;
-    // The switch for a specific NFT ID. When this is enabled, only the staking associated with that particular NFT ID can be directly withdrawn, ignoring normal staking conditions.
+    // The switch for a specific NFTID. When this is enabled, only the registration associated with that particular NFT ID can be directly withdrawn, ignoring normal registration conditions.
     mapping(address => mapping(uint256 => uint256)) nftswitch;
-    // The NFT contracts that are supported by the staking contract.
+    // The NFT contracts that are supported by the registration contract.
     mapping(address => bool) supportnft;
-    // The staking information for specific NFT IDs from the supported NFT contract's Id.
-    mapping(address => mapping(uint256 => uint256)) private stakeInfo;
+    // The registration information for specific NFT IDs from the supported NFT contract's Id.
+    mapping(address => mapping(uint256 => uint256)) private registerInfo;
     // The blacking information for specific addresses.
-    mapping(address => uint256) blackInfo;
+    mapping(address => uint256) banInfo;
     // The functionality to check if a given signature has already been used before.
-    mapping(uint64 => bool) private _sigvalue;
+    mapping(uint64 => bool) private sigvalue;
 
-    event UserOp(
-        address indexed nft,
-        address indexed staker,
-        uint256[] nftId,
+    // user operation
+    event Register(
+        address nft,
+        address register,
         uint256 timestamp,
-        uint256 types
+        uint256[] nftId
     );
-    event MinerOp(
-        address[] staker,
-        uint256 indexed timestamp,
-        uint256 indexed types
+    event UnRegister(address nft, address register, uint256[] nftId);
+    event Renewal(
+        address nft,
+        address register,
+        uint256 nftId,
+        uint256 timestamp
     );
+    event Burn(uint64 signId);
+    // miner operation
+    event Ban(uint256 timestamp, address[] players);
+    event ReduceBanningDuration(address player, uint256 timestamp);
 
-    event Burn(uint64 indexed signId);
     error InBannedStatus();
-    error UnableToUnstake();
-    error InvalidStakingTime();
+    error UnableToUnregister();
+    error InvalidRegistrationTime();
     error NotSupportedNFT();
-    error InvalidExtendTime();
-    error ExceedBlackCeil();
+    error InvalidRenewalTime();
+    error ExceedBanCeil();
 
-    constructor(address _miner, address[] memory nfts) {
-        require(_miner != address(0), "Invalid address");
-        miner = _miner;
+    constructor(address[] memory nfts) {
         supportNFT(nfts, true);
     }
 
@@ -96,16 +97,14 @@ contract stakeShip is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Only the contract owner can update the limitIdLen of batch-staking
+     * @notice Only the contract owner can update the limitIdLen of batch-registration
      */
     function setLimitLen(uint32 _limitIdLen) external onlyOwner {
         limitIdLen = _limitIdLen;
     }
 
     /**
-     * @notice Only the contract owner can update the list of NFT contracts that are supported or unsupported by the staking contract.
-     * @param nfts.
-     * @param status.
+     * @notice Only the contract owner can update the list of NFT contracts that are supported or unsupported by the registration contract.
      */
     function setSupportNFT(address[] memory nfts, bool status)
         external
@@ -124,9 +123,7 @@ contract stakeShip is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Only the contract owner can update the minimum and maximum staking period.
-     * @param floorts.
-     * @param ceilts.
+     * @notice Only the contract owner can update the minimum and maximum registration period.
      */
     function updateTsLimit(uint64 floorts, uint64 ceilts) external onlyOwner {
         floorlimit = floorts;
@@ -135,7 +132,6 @@ contract stakeShip is Ownable, ReentrancyGuard {
 
     /**
      * @notice Only the contract owner can enable the global switch for a duration time.
-     * @param duration.
      */
     function setGloSwitch(uint256 duration) external onlyOwner {
         uint256 ts = block.timestamp;
@@ -144,8 +140,6 @@ contract stakeShip is Ownable, ReentrancyGuard {
 
     /**
      * @notice Only the contract owner can enable the address-specific switch for a specific address and a set duration.
-     * @param addr.
-     * @param duration.
      */
     function setAddrSwitch(address addr, uint256 duration) external onlyOwner {
         uint256 ts = block.timestamp;
@@ -153,10 +147,7 @@ contract stakeShip is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Only the contract owner can enable the NFTdD-specific switch for a specific NFT contract and a set duration.
-     * @param nft.
-     * @param nftId.
-     * @param duration.
+     * @notice Only the contract owner can enable the NFTID-specific switch for a specific NFT contract and a set duration.
      */
     function setNFTSwitch(
         address nft,
@@ -168,107 +159,96 @@ contract stakeShip is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Staking requires a supported NFT and a valid timestamp duration between the floor limit and ceiling limit. Meanwhile, the transaction reverts if the sender is on the blacklist, and the blacklist information will be deleted if the sender is not on the blacklist or the blacklist duration has ended.
-     * @param nft Staking must specify the NFT contract.
-     * @param nftIds Staking must specify the NFTId.
-     * @param timestamp Staking must provide a duration.
+     * @notice Registration requires a supported NFT and a valid timestamp duration between the floor limit and ceiling limit. Meanwhile, the transaction reverts if the sender is on the banlist, and the banlist information will be deleted if the sender is not on the banlist or the banlist duration has ended.
      */
-    function stake(
+    function registration(
         address nft,
         uint256[] calldata nftIds,
         uint256 timestamp
     ) external nonReentrant {
-        address staker = _msgSender();
+        address register = _msgSender();
         uint256 len = nftIds.length;
         require(len <= limitIdLen, "Exceed maximum length");
-        checkts(nft, timestamp, staker);
+        checkts(nft, timestamp, register);
         uint256 nftId;
         uint256 endts = timestamp + block.timestamp;
-        uint256 packdata = _packStakeData(staker, endts);
+        uint256 packdata = _packRegisterData(register, endts);
         for (uint256 index = 0; index < len; index++) {
             nftId = nftIds[index];
-            IERC721(nft).safeTransferFrom(staker, address(this), nftId);
-            stakeInfo[nft][nftId] = packdata;
+            registerInfo[nft][nftId] = packdata;
+            IERC721(nft).safeTransferFrom(register, address(this), nftId);
         }
-        emit UserOp(nft, staker, nftIds, endts, 0);
+        emit Register(nft, register, endts, nftIds);
     }
 
     /**
-     * @notice For unstaking, the sender must be the address that staked the NFTID. They can unstake the NFTID if any switches are enabled for him, or if the maximum staking and blacklist durations have ended. Unstaking will delete the blacklist state for the player.
-     * @param nft Staking must specify the NFT contract.
-     * @param nftIds Staking must specify the NFTId.
+     * @notice For Unregistration, the sender must be the address that registed  the NFTID. They can unregister the NFTID if any switches are enabled for him, or if the maximum between registration and banlist durations have ended. Unregistration will delete the banlist state for the player.
      */
-    function unstake(address nft, uint256[] calldata nftIds)
+    function unRegistration(address nft, uint256[] calldata nftIds)
         external
         nonReentrant
     {
-        address unstaker = _msgSender();
+        address unregister = _msgSender();
         uint256 len = nftIds.length;
         require(len <= limitIdLen, "Exceed maximum length");
         uint256 nftId;
         uint256 ts = block.timestamp;
-        bool temstatus = globalswitch > ts || addrswitch[unstaker] > ts;
+        bool temstatus = globalswitch > ts || addrswitch[unregister] > ts;
         for (uint256 index = 0; index < len; index++) {
             nftId = nftIds[index];
-            stakeDataCheck(unstaker, nft, nftId);
+            registerDataCheck(unregister, nft, nftId);
             bool status = temstatus || nftswitch[nft][nftId] > ts;
             if (!status) {
-                uint256 maxts = stakEndts(nft, unstaker, nftId);
+                uint256 maxts = stakEndts(nft, unregister, nftId);
                 if (ts > maxts) {
-                    delete blackInfo[unstaker];
+                    delete banInfo[unregister];
                 } else {
-                    revert UnableToUnstake();
+                    revert UnableToUnregister();
                 }
             }
-            IERC721(nft).safeTransferFrom(address(this), unstaker, nftId);
-            delete stakeInfo[nft][nftId];
+            delete registerInfo[nft][nftId];
+            IERC721(nft).safeTransferFrom(address(this), unregister, nftId);
         }
-        emit UserOp(nft, unstaker, nftIds, ts, 2);
+
+        emit UnRegister(nft, unregister, nftIds);
     }
 
     /**
-     * @notice For extending a stake, the sender must be the address that staked the NFT ID. They can extend the staking duration for the specific NFT ID. Extending will delete the blacklist state if the sender has been blacklisted but the blacklisted duration has now expired.
-     * @param nft Extending must specify the NFT contract.
-     * @param nftIds Extending must specify the NFTId.
-     * @param timestamp Extending must provide a duration between floorlimit and ceillimit.
+     * @notice For renewal a register duration, the sender must be the address that registed the NFTID. They can renewal the registration duration for the specific NFT ID. Renewaling will delete the banlist state if the sender has been banlisted but the banlisted duration has now expired.
      */
-    function extend(
+    function registrationRenewal(
         address nft,
         uint256[] calldata nftIds,
         uint64 timestamp
     ) external {
-        address staker = _msgSender();
-        checkts(nft, timestamp, staker);
+        address register = _msgSender();
+        checkts(nft, timestamp, register);
         uint256 len = nftIds.length;
         require(len <= limitIdLen, "Exceed maximum length");
         uint256 nftId;
         uint256 ts = block.timestamp;
         for (uint256 index = 0; index < len; index++) {
             nftId = nftIds[index];
-            uint256 stakets = stakeDataCheck(staker, nft, nftId);
-            uint256 endts = ts > stakets ? ts : stakets;
+            uint256 registerts = registerDataCheck(register, nft, nftId);
+            uint256 endts = ts > registerts ? ts : registerts;
             endts += timestamp;
             if (endts - ts > ceillimit) {
                 endts = ts + ceillimit;
             }
-            stakeInfo[nft][nftId] = _packStakeData(staker, endts);
-            uint256[] memory tem = new uint256[](1);
-            tem[0] = nftId;
-            emit UserOp(nft, staker, tem, endts, 1);
+            registerInfo[nft][nftId] = _packRegisterData(register, endts);
+            emit Renewal(nft, register, nftId, endts);
         }
     }
 
     /**
-     * @notice Only the Miner can blacklist players who are not already in a blacklisted state, for a maximum duration of BLACKCEIL.
-     * @param players The blacking player address.
-     * @param timestamp The blacking duration less than BLACKCEIL.
+     * @notice Only the Miner can ban players who are not already in a banlisted state, for a maximum duration of BANCEIL.
      */
-    function black(address[] calldata players, uint256 timestamp)
+    function ban(address[] calldata players, uint256 timestamp)
         external
         onlyMiner
     {
-        if (timestamp > BLACKCEIL) {
-            revert ExceedBlackCeil();
+        if (timestamp > BANCEIL) {
+            revert ExceedBanCeil();
         }
         address player;
         uint256 len = players.length;
@@ -276,21 +256,19 @@ contract stakeShip is Ownable, ReentrancyGuard {
         uint256 endts = timestamp + block.timestamp;
         for (uint256 index = 0; index < len; index++) {
             player = players[index];
-            require((blackInfo[player] == 0), "The user has been banned");
-            blackInfo[player] = endts;
+            require((banInfo[player] == 0), "The user has been banned");
+            banInfo[player] = endts;
         }
-        emit MinerOp(players, endts, 0);
+        emit Ban(endts, players);
     }
 
     /**
-     * @notice Only the Miner can reduce the blacklist duration for players.
-     * @param players The redeem player address.
-     * @param timestamp The redeem duration less than BLACKCEIL.
+     * @notice Only the Miner can reduce the banning duration for players.
      */
-    function redeem(address[] calldata players, uint256 timestamp)
-        external
-        onlyMiner
-    {
+    function reduceBanningDuration(
+        address[] calldata players,
+        uint256 timestamp
+    ) external onlyMiner {
         address player;
         uint256 len = players.length;
         require(len <= limitIdLen, "Exceed maximum length");
@@ -298,20 +276,18 @@ contract stakeShip is Ownable, ReentrancyGuard {
             player = players[index];
             uint256 remaingts = blackRemaingSeconds(player);
             if (remaingts <= timestamp) {
-                delete blackInfo[player];
+                delete banInfo[player];
             } else {
-                blackInfo[player] -= timestamp;
+                banInfo[player] -= timestamp;
             }
-            address[] memory tem = new address[](1);
-            tem[0] = player;
-            emit MinerOp(tem, blackInfo[player], 1);
+            emit ReduceBanningDuration(player, banInfo[player]);
         }
     }
 
     /**
-     * @notice Stakers can burn their NFTs based on a valid signed request.
+     * @notice Registers can burn the in-game items (NFTs) to upgrade or disassemble operations in specific game scenarios
      */
-    function disassemble(
+    function burn(
         address nft,
         uint32[] calldata nftIds,
         uint64 timestamp,
@@ -320,18 +296,17 @@ contract stakeShip is Ownable, ReentrancyGuard {
         bytes memory sig
     ) external {
         assertValidCosign(nft, nftIds, timestamp, uuid, signId, sig);
-        (uint32 nftId, uint256 len, address staker) = (
-            0,
-            nftIds.length,
-            _msgSender()
-        );
-        if (blackRemaingSeconds(staker) != 0) {
+        uint32 nftId;
+        uint256 len = nftIds.length;
+        address register = _msgSender();
+        if (blackRemaingSeconds(register) != 0) {
             revert InBannedStatus();
         }
         for (uint256 i = 0; i < len; i++) {
             nftId = nftIds[i];
-            stakeDataCheck(staker, nft, nftId);
-            NFTBurn(nft).burn(nftId);
+            registerDataCheck(register, nft, nftId);
+            delete registerInfo[nft][nftId];
+            SpaceNFTBurn(nft).burn(nftId);
         }
         emit Burn(signId);
     }
@@ -364,8 +339,8 @@ contract stakeShip is Ownable, ReentrancyGuard {
         if (timestamp != 0) {
             require((expireTime + timestamp >= block.timestamp), "HAS_Expired");
         }
-        require((!_sigvalue[uuid]), "HAS_USED");
-        _sigvalue[uuid] = true;
+        require((!sigvalue[uuid]), "HAS_USED");
+        sigvalue[uuid] = true;
         return true;
     }
 
@@ -386,9 +361,9 @@ contract stakeShip is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Returns the packed data based on the staking address and time duration.
+     * @notice Returns the packed data based on the registration address and time duration.
      */
-    function _packStakeData(address owner, uint256 ts)
+    function _packRegisterData(address owner, uint256 ts)
         private
         pure
         returns (uint256 result)
@@ -402,9 +377,9 @@ contract stakeShip is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Returns the unpacked staking address and time duration from `packed`.
+     * @notice Returns the unpacked registration address and time duration from `packed`.
      */
-    function _unpackedStakeInfo(uint256 packed)
+    function _unpackedRegisterInfo(uint256 packed)
         private
         pure
         returns (address, uint256)
@@ -413,22 +388,22 @@ contract stakeShip is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Validate the NFT address, staking duration, and blacklist state.
+     * @notice Validate the NFT address, registration duration, and banlist state.
      */
     function checkts(
         address nft,
         uint256 ts,
-        address staker
+        address register
     ) internal {
         if (!supportnft[nft]) {
             revert NotSupportedNFT();
         }
         if (ts < floorlimit || ts > ceillimit) {
-            revert InvalidStakingTime();
+            revert InvalidRegistrationTime();
         }
-        if (blacked(staker)) {
-            if (blackRemaingSeconds(staker) == 0) {
-                delete blackInfo[staker];
+        if (blacked(register)) {
+            if (blackRemaingSeconds(register) == 0) {
+                delete banInfo[register];
             } else {
                 revert InBannedStatus();
             }
@@ -436,10 +411,10 @@ contract stakeShip is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Return the remaining time of the player's blacklist state.
+     * @notice Return the remaining time of the player's banlist state.
      */
     function blackRemaingSeconds(address player) public view returns (uint256) {
-        uint256 blackts = blackInfo[player];
+        uint256 blackts = banInfo[player];
         uint256 ts = block.timestamp;
         if (ts > blackts) {
             return 0;
@@ -449,19 +424,19 @@ contract stakeShip is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Return the maximum of the staking time and blacklist time.
+     * @notice Return the maximum of the registration time and banlist time.
      */
     function stakEndts(
         address nft,
         address player,
         uint256 nftId
     ) public view returns (uint256) {
-        uint256 blackts = blackInfo[player];
-        uint256 packdata = stakeInfo[nft][nftId];
-        uint256 stakets;
-        (, stakets) = _unpackedStakeInfo(packdata);
+        uint256 blackts = banInfo[player];
+        uint256 packdata = registerInfo[nft][nftId];
+        uint256 registerts;
+        (, registerts) = _unpackedRegisterInfo(packdata);
 
-        return blackts > stakets ? blackts : stakets;
+        return blackts > registerts ? blackts : registerts;
     }
 
     function renounceOwnership() public view override onlyOwner {
@@ -469,34 +444,32 @@ contract stakeShip is Ownable, ReentrancyGuard {
     }
 
     function blacked(address player) private view returns (bool) {
-        return blackInfo[player] != 0;
+        return banInfo[player] != 0;
     }
 
     /**
-     * @notice Validate that the sender matches the staking address.
+     * @notice Validate that the sender matches the registration address.
      */
-    function stakeDataCheck(
+    function registerDataCheck(
         address sender,
         address nft,
         uint256 nftId
     ) private view returns (uint256 endts) {
-        uint256 stakets;
-        address staker;
-        (staker, stakets) = stakeData(nft, nftId);
-        require(sender == staker, "Without staking permission");
-        return stakets;
+        address register;
+        (register, endts) = registerData(nft, nftId);
+        require(sender == register, "Without registration permission");
     }
 
     /**
-     * @notice Return the staking information, including the staking address and time, for a specific NFT contract and NFT ID.
+     * @notice Return the registration information, including the registration address and time, for a specific NFT contract and NFT ID.
      */
-    function stakeData(address nft, uint256 nftId)
+    function registerData(address nft, uint256 nftId)
         public
         view
         returns (address, uint256)
     {
-        uint256 packdata = stakeInfo[nft][nftId];
-        return _unpackedStakeInfo(packdata);
+        uint256 packdata = registerInfo[nft][nftId];
+        return _unpackedRegisterInfo(packdata);
     }
 
     function onERC721Received(
