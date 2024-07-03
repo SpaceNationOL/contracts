@@ -276,7 +276,7 @@ contract SpaceNFTRegistry is Ownable, ReentrancyGuard {
             player = players[index];
             uint256 remaingts = blackRemaingSeconds(player);
             if (remaingts <= timestamp) {
-                delete banInfo[player];
+                banInfo[player] = block.timestamp;
             } else {
                 banInfo[player] -= timestamp;
             }
