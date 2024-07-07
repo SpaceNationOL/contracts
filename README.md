@@ -9,4 +9,4 @@
 
 ### Space NFT Registration
 - [Source Code](https://raw.githubusercontent.com/SpaceNationOL/contracts/main/contracts/stake/SpaceNFTRegistry.sol)
-- [Security Audit Report](https://raw.githubusercontent.com/SpaceNationOL/contracts/main/audits/stake/REP-final-20240626T160558Z.pdf)
+- [Security Audit Report](https://raw.githubusercontent.com/SpaceNationOL/contracts/main/audits/stake/REP-final-20240705T171536Z.pdf)
