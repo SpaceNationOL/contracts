@@ -14,8 +14,7 @@ import "solmate/src/tokens/ERC20.sol";
  */
 contract ClaimToken is Ownable, ReentrancyGuard {
     using ECDSA for bytes32;
-    //The expiration time of the signature. If set to 0, it indicates that the signature user has expired.
-    uint64 private expireTime = 300;
+
     uint256 private thresholds;
     bool private checkthresholds;
     //The wallet address for storing tokens.
@@ -46,8 +45,8 @@ contract ClaimToken is Ownable, ReentrancyGuard {
      * @param indexs. The index value corresponding to each address.
      */
     function setPayers(address[] memory addrs, uint64[] memory indexs)
-        external
-        onlyOwner
+    external
+    onlyOwner
     {
         uint256 len = addrs.length;
         require(indexs.length == len, "INVALID_ARRAY");
@@ -66,8 +65,8 @@ contract ClaimToken is Ownable, ReentrancyGuard {
      * @param indexs. The index value corresponding to each address.
      */
     function setTokens(address[] memory addrs, uint64[] memory indexs)
-        external
-        onlyOwner
+    external
+    onlyOwner
     {
         uint256 len = addrs.length;
         require(indexs.length == len, "INVALID_ARRAY");
@@ -122,7 +121,6 @@ contract ClaimToken is Ownable, ReentrancyGuard {
     function claim(
         uint256 amount,
         uint256 maxamount,
-        uint64 timestamp,
         uint64 uuid,
         uint64 signId,
         uint32 pindex,
@@ -132,16 +130,7 @@ contract ClaimToken is Ownable, ReentrancyGuard {
         if (checkthresholds && amount > thresholds) {
             revert();
         }
-        assertValidCosign(
-            amount,
-            maxamount,
-            timestamp,
-            uuid,
-            signId,
-            pindex,
-            tindex,
-            sig
-        );
+        assertValidCosign(amount, maxamount, uuid, signId, pindex, tindex, sig);
         SafeTransferLib.safeTransferFrom(
             ERC20(tokens[tindex]),
             payers[pindex],
@@ -188,7 +177,6 @@ contract ClaimToken is Ownable, ReentrancyGuard {
             assertValidCosign(
                 amount,
                 maxamount,
-                timestamp,
                 uuid,
                 signId,
                 pindex,
@@ -220,16 +208,12 @@ contract ClaimToken is Ownable, ReentrancyGuard {
     function assertValidCosign(
         uint256 amount,
         uint256 maxamount,
-        uint64 timestamp,
         uint64 uuid,
         uint64 signId,
         uint32 pindex,
         uint32 tindex,
         bytes memory sig
     ) private returns (bool) {
-        if (timestamp != 0) {
-            require((expireTime + timestamp >= block.timestamp), "HAS_EXPIRED");
-        }
         if (maxamount != 0) {
             require(
                 claimed[_msgSender()] + amount <= maxamount,
@@ -241,7 +225,6 @@ contract ClaimToken is Ownable, ReentrancyGuard {
             abi.encodePacked(
                 amount,
                 maxamount,
-                timestamp,
                 uuid,
                 signId,
                 _chainID(),
@@ -258,9 +241,9 @@ contract ClaimToken is Ownable, ReentrancyGuard {
     }
 
     function matchSigner(bytes32 hash, bytes memory signature)
-        private
-        view
-        returns (bool)
+    private
+    view
+    returns (bool)
     {
         address _signer = hash.toEthSignedMessageHash().recover(signature);
         return signers[_signer];
@@ -279,13 +262,6 @@ contract ClaimToken is Ownable, ReentrancyGuard {
      */
     function setSigner(address cosigner, bool flag) external onlyOwner {
         signers[cosigner] = flag;
-    }
-
-    /**
-     * @notice Sets expiry in seconds. This timestamp specifies how long a signature from cosigner is valid for.
-     */
-    function setTimestampExpirySeconds(uint64 expiry) external onlyOwner {
-        expireTime = expiry;
     }
 
     function renounceOwnership() public view override onlyOwner {

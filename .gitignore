@@ -1,0 +1,8 @@
+.idea
+.vscode
+.states
+*scripts
+*deps
+*states
+*artifacts
+*prettierrc.json
