@@ -32,9 +32,12 @@ contract ClaimToken is Ownable2Step, ReentrancyGuard {
 
     constructor(address[] memory _signers, uint64 _thresholds) {
         address signer;
-        for (uint256 i = 0; i < _signers.length; i++) {
-            signer = _signers[i];
-            signers[signer] = true;
+        uint256 len = _signers.length;
+        unchecked {
+            for (uint256 i = 0; i < len; ++i) {
+                signer = _signers[i];
+                signers[signer] = true;
+            }
         }
         thresholds = _thresholds;
     }
@@ -52,10 +55,12 @@ contract ClaimToken is Ownable2Step, ReentrancyGuard {
         require(indexs.length == len, "INVALID_ARRAY");
         uint64 index;
         address addr;
-        for (uint256 i = 0; i < len; i++) {
-            index = indexs[i];
-            addr = addrs[i];
-            payers[index] = addr;
+        unchecked {
+            for (uint256 i = 0; i < len; ++i) {
+                index = indexs[i];
+                addr = addrs[i];
+                payers[index] = addr;
+            }
         }
     }
 
@@ -72,10 +77,12 @@ contract ClaimToken is Ownable2Step, ReentrancyGuard {
         require(indexs.length == len, "INVALID_ARRAY");
         uint64 index;
         address addr;
-        for (uint256 i = 0; i < len; i++) {
-            index = indexs[i];
-            addr = addrs[i];
-            tokens[index] = addr;
+        unchecked {
+            for (uint256 i = 0; i < len; ++i) {
+                index = indexs[i];
+                addr = addrs[i];
+                tokens[index] = addr;
+            }
         }
     }
 
@@ -96,16 +103,18 @@ contract ClaimToken is Ownable2Step, ReentrancyGuard {
         require(amounts.length == len, "INVALID_ARRAY");
         uint256 amount;
         address player;
-        for (uint256 i = 0; i < len; i++) {
-            amount = amounts[i];
-            player = players[i];
+        unchecked {
+            for (uint256 i = 0; i < len; ++i) {
+                amount = amounts[i];
+                player = players[i];
 
-            SafeTransferLib.safeTransferFrom(
-                ERC20(tokens[tindex]),
-                payers[pindex],
-                player,
-                amount
-            );
+                SafeTransferLib.safeTransferFrom(
+                    ERC20(tokens[tindex]),
+                    payers[pindex],
+                    player,
+                    amount
+                );
+            }
         }
     }
 
@@ -170,19 +179,21 @@ contract ClaimToken is Ownable2Step, ReentrancyGuard {
         uint64 uuid;
         bytes memory sig;
         uint64 timestamp;
-        for (uint256 i = 0; i < len; i++) {
-            uuid = uuids[i];
-            sig = sigs[i];
-            timestamp = timestamps[i];
-            assertValidCosign(
-                amount,
-                maxamount,
-                uuid,
-                signId,
-                pindex,
-                tindex,
-                sig
-            );
+        unchecked {
+            for (uint256 i = 0; i < len; ++i) {
+                uuid = uuids[i];
+                sig = sigs[i];
+                timestamp = timestamps[i];
+                assertValidCosign(
+                    amount,
+                    maxamount,
+                    uuid,
+                    signId,
+                    pindex,
+                    tindex,
+                    sig
+                );
+            }
         }
 
         SafeTransferLib.safeTransferFrom(
