@@ -42,11 +42,13 @@ contract ClaimToken is Ownable2Step {
         address _token,
         uint64 _thresholds
     ) {
+        require(_token != address(0));
         address signer;
         uint256 len = _signers.length;
         unchecked {
             for (uint256 i = 0; i < len; ++i) {
                 signer = _signers[i];
+                require(signer != address(0));
                 signers[signer] = true;
             }
         }
@@ -60,14 +62,15 @@ contract ClaimToken is Ownable2Step {
      * @param flag. The status of each token.
      */
     function configWLtokens(address[] calldata _tokens, bool flag)
-    external
-    onlyOwner
+        external
+        onlyOwner
     {
         uint256 len = _tokens.length;
         address token;
         unchecked {
             for (uint256 i = 0; i < len; ++i) {
                 token = _tokens[i];
+                require(token != address(0));
                 tokens[token] = flag;
             }
         }
@@ -75,16 +78,16 @@ contract ClaimToken is Ownable2Step {
 
     /**
      * @notice Only the contract owner can airdrop tokens
+     * @param token. The token address.
+     * @param wallet. The token wallet address.
      * @param players. Array of airdrop addresses.
      * @param amounts. Array of airdrop amounts corresponding to each address.
-     * @param wallet. The token wallet address.
-     * @param token. The token address.
      */
     function transfer(
-        address[] calldata players,
-        uint256[] calldata amounts,
+        address token,
         address wallet,
-        address token
+        address[] calldata players,
+        uint256[] calldata amounts
     ) external onlyOwner {
         uint256 len = players.length;
         if (amounts.length != len) {
@@ -222,6 +225,7 @@ contract ClaimToken is Ownable2Step {
      * @notice Sets threshold.
      */
     function setThresholds(uint256 _thresholds, bool flag) external onlyOwner {
+        require(_thresholds != 0);
         thresholds = _thresholds;
         checkthresholds = flag;
     }
