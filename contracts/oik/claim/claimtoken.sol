@@ -2,7 +2,6 @@
 pragma solidity 0.8.19;
 import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "solmate/src/utils/SafeTransferLib.sol";
 import "solmate/src/tokens/ERC20.sol";
 
@@ -12,25 +11,37 @@ import "solmate/src/tokens/ERC20.sol";
  * @author @SpaceNation
  * @notice Space Nation claim tokens
  */
-contract ClaimToken is Ownable2Step, ReentrancyGuard {
+contract ClaimToken is Ownable2Step {
     using ECDSA for bytes32;
-
     uint256 private thresholds;
     bool private checkthresholds;
-    //The wallet address for storing tokens.
-    mapping(uint64 => address) public payers;
-    mapping(uint64 => address) public tokens;
-    mapping(uint64 => bool) private sigvalue;
-    mapping(address => uint256) private claimed;
-    mapping(address => bool) private signers;
-    event Claim(
-        address indexed claimer,
-        uint64 indexed signId,
-        address token,
-        uint256 amount
-    );
 
-    constructor(address[] memory _signers, uint64 _thresholds) {
+    mapping(address => bool) public tokens;
+    mapping(address => uint64) public nonces;
+    mapping(address => mapping(address => uint256)) private claimed;
+    mapping(address => bool) private signers;
+    mapping(bytes => bool) private signatures;
+
+    event Claim(
+        address token,
+        address sender,
+        uint64 nonce,
+        uint256 amount,
+        bytes sig
+    );
+    event Transfer(address token, address[] player, uint256[] amount);
+
+    error InvalidSignaturesOrAmounts();
+    error InvalidSignature();
+    error InvalidArray();
+    error InvalidToken();
+    error DuplicatedSig();
+
+    constructor(
+        address[] memory _signers,
+        address _token,
+        uint64 _thresholds
+    ) {
         address signer;
         uint256 len = _signers.length;
         unchecked {
@@ -39,49 +50,25 @@ contract ClaimToken is Ownable2Step, ReentrancyGuard {
                 signers[signer] = true;
             }
         }
+        tokens[_token] = true;
         thresholds = _thresholds;
     }
 
     /**
-     * @notice Only the contract owner address can configure the index value of the wallet address.
-     * @param addrs. Array of token wallet addresses.
-     * @param indexs. The index value corresponding to each address.
+     * @notice Only the contract owner address can configure the white list of the tokens address.
+     * @param _tokens. Token  address.
+     * @param flag. The status of each token.
      */
-    function setPayers(address[] memory addrs, uint64[] memory indexs)
+    function configWLtokens(address[] calldata _tokens, bool flag)
     external
     onlyOwner
     {
-        uint256 len = addrs.length;
-        require(indexs.length == len, "INVALID_ARRAY");
-        uint64 index;
-        address addr;
+        uint256 len = _tokens.length;
+        address token;
         unchecked {
             for (uint256 i = 0; i < len; ++i) {
-                index = indexs[i];
-                addr = addrs[i];
-                payers[index] = addr;
-            }
-        }
-    }
-
-    /**
-     * @notice Only the contract owner address can configure the index value of the token address.
-     * @param addrs. Array of token wallet addresses.
-     * @param indexs. The index value corresponding to each address.
-     */
-    function setTokens(address[] memory addrs, uint64[] memory indexs)
-    external
-    onlyOwner
-    {
-        uint256 len = addrs.length;
-        require(indexs.length == len, "INVALID_ARRAY");
-        uint64 index;
-        address addr;
-        unchecked {
-            for (uint256 i = 0; i < len; ++i) {
-                index = indexs[i];
-                addr = addrs[i];
-                tokens[index] = addr;
+                token = _tokens[i];
+                tokens[token] = flag;
             }
         }
     }
@@ -90,17 +77,19 @@ contract ClaimToken is Ownable2Step, ReentrancyGuard {
      * @notice Only the contract owner can airdrop tokens
      * @param players. Array of airdrop addresses.
      * @param amounts. Array of airdrop amounts corresponding to each address.
-     * @param pindex. Index values of airdrop token wallet addresses in this contract.
-     * @param tindex. Index value of the token address in this contract.
+     * @param wallet. The token wallet address.
+     * @param token. The token address.
      */
     function transfer(
-        address[] memory players,
-        uint256[] memory amounts,
-        uint32 pindex,
-        uint32 tindex
-    ) external onlyOwner nonReentrant {
+        address[] calldata players,
+        uint256[] calldata amounts,
+        address wallet,
+        address token
+    ) external onlyOwner {
         uint256 len = players.length;
-        require(amounts.length == len, "INVALID_ARRAY");
+        if (amounts.length != len) {
+            revert InvalidArray();
+        }
         uint256 amount;
         address player;
         unchecked {
@@ -108,106 +97,84 @@ contract ClaimToken is Ownable2Step, ReentrancyGuard {
                 amount = amounts[i];
                 player = players[i];
 
-                SafeTransferLib.safeTransferFrom(
-                    ERC20(tokens[tindex]),
-                    payers[pindex],
-                    player,
-                    amount
-                );
+                _transfer(token, wallet, player, amount);
             }
         }
+        emit Transfer(token, players, amounts);
     }
 
     /**
      * @notice Users claim tokens through a valid signature.
      * @param amount. Amount of tokens claimed by the user.
-     * @param uuid. Random value for this signature must not be duplicated.
-     * @param signId. Signature ID for use in off-chain systems.
-     * @param pindex. Index values of airdrop token wallet addresses in this contract.
-     * @param tindex. Index value of the token address in this contract.
+     * @param wallet. The token wallet address.
+     * @param token. The token address.
      * @param sig. Signature generated off-chain based on the user's claim information.
      */
     function claim(
+        address token,
+        address wallet,
         uint256 amount,
-        uint256 maxamount,
-        uint64 uuid,
-        uint64 signId,
-        uint32 pindex,
-        uint32 tindex,
         bytes memory sig
-    ) external nonReentrant {
+    ) external {
         if (checkthresholds && amount > thresholds) {
             revert();
         }
-        assertValidCosign(amount, maxamount, uuid, signId, pindex, tindex, sig);
-        SafeTransferLib.safeTransferFrom(
-            ERC20(tokens[tindex]),
-            payers[pindex],
-            _msgSender(),
-            amount
-        );
-        emit Claim(_msgSender(), signId, tokens[tindex], amount);
+        address sender = _msgSender();
+        assertValidCosign(token, sender, wallet, amount, sig);
+
+        claimed[token][sender] += amount;
+        ++nonces[sender];
+        _transfer(token, wallet, sender, amount);
+        emit Claim(token, sender, nonces[sender], amount, sig);
     }
 
     /**
      * @notice Users claim tokens through some signatures.
      * @param amount. Amount of tokens claimed by the user.
-     * @param uuids. Random value for this signature must not be duplicated.
-     * @param signId. Signature ID for use in off-chain systems.
-     * @param pindex. Index values of airdrop token wallet addresses in this contract.
-     * @param tindex. Index value of the token address in this contract.
+     * @param wallet. The token wallet addresses.
+     * @param token. The token address.
      * @param sigs. Signatures generated off-chain based on the user's claim information.
      */
-    function bigclaim(
+    function bigClaim(
+        address token,
+        address wallet,
         uint256 amount,
-        uint256 maxamount,
-        uint64[] memory timestamps,
-        uint64[] memory uuids,
-        uint64 signId,
-        uint32 pindex,
-        uint32 tindex,
-        bytes[] memory sigs
-    ) external nonReentrant {
-        if (amount < thresholds) {
-            revert();
+        bytes[] calldata sigs
+    ) external {
+        uint256 len = sigs.length;
+        if (len < 2 || amount < thresholds) {
+            revert InvalidSignaturesOrAmounts();
         }
-
-        uint256 len = uuids.length;
-        require(len > 1, "AT_LEAST_TWO_SIGNATURES");
-        require(sigs.length == len, "INVALID_ARRAY");
-        require(timestamps.length == len, "INVALID_ARRAY");
-        uint64 uuid;
+        address sender = _msgSender();
         bytes memory sig;
-        uint64 timestamp;
+        bytes memory siglog;
+
         unchecked {
             for (uint256 i = 0; i < len; ++i) {
-                uuid = uuids[i];
                 sig = sigs[i];
-                timestamp = timestamps[i];
-                assertValidCosign(
-                    amount,
-                    maxamount,
-                    uuid,
-                    signId,
-                    pindex,
-                    tindex,
-                    sig
-                );
+                siglog = bytes.concat(siglog, sig);
+                assertValidCosign(token, sender, wallet, amount, sig);
             }
         }
 
-        SafeTransferLib.safeTransferFrom(
-            ERC20(tokens[tindex]),
-            payers[pindex],
-            _msgSender(),
-            amount
-        );
-        emit Claim(_msgSender(), signId, tokens[tindex], amount);
+        claimed[token][sender] += amount;
+        ++nonces[sender];
+        _transfer(token, wallet, sender, amount);
+        emit Claim(token, sender, nonces[sender], amount, siglog);
     }
 
-    /**
-     * @notice Returns chain id.
-     */
+    function _transfer(
+        address token,
+        address from,
+        address to,
+        uint256 amount
+    ) private {
+        if (!tokens[token]) {
+            revert InvalidToken();
+        }
+        SafeTransferLib.safeTransferFrom(ERC20(token), from, to, amount);
+    }
+
     function _chainID() private view returns (uint64) {
         uint64 chainID;
         assembly {
@@ -217,53 +184,44 @@ contract ClaimToken is Ownable2Step, ReentrancyGuard {
     }
 
     function assertValidCosign(
+        address token,
+        address sender,
+        address wallet,
         uint256 amount,
-        uint256 maxamount,
-        uint64 uuid,
-        uint64 signId,
-        uint32 pindex,
-        uint32 tindex,
         bytes memory sig
-    ) private returns (bool) {
-        if (maxamount != 0) {
-            require(
-                claimed[_msgSender()] + amount <= maxamount,
-                "EXCEED_MAX_CLAIM_AMOUNT"
-            );
+    ) private {
+        if (signatures[sig]) {
+            revert DuplicatedSig();
         }
-        require((!sigvalue[uuid]), "HAS_USED");
+
+        uint64 nonce = nonces[sender];
         bytes32 hash = keccak256(
             abi.encodePacked(
                 amount,
-                maxamount,
-                uuid,
-                signId,
+                nonce,
                 _chainID(),
-                pindex,
-                tindex,
-                _msgSender(),
+                token,
+                sender,
+                wallet,
                 address(this)
             )
         );
-        require(matchSigner(hash, sig), "INVALID_SIGNATURE");
-        claimed[_msgSender()] += amount;
-        sigvalue[uuid] = true;
-        return true;
+        matchSigner(hash, sig);
+
+        signatures[sig] = true;
     }
 
-    function matchSigner(bytes32 hash, bytes memory signature)
-    private
-    view
-    returns (bool)
-    {
+    function matchSigner(bytes32 hash, bytes memory signature) private view {
         address _signer = hash.toEthSignedMessageHash().recover(signature);
-        return signers[_signer];
+        if (!signers[_signer]) {
+            revert InvalidSignature();
+        }
     }
 
     /**
-     * @notice Sets signer.
+     * @notice Sets threshold.
      */
-    function setthresholds(uint256 _thresholds, bool flag) external onlyOwner {
+    function setThresholds(uint256 _thresholds, bool flag) external onlyOwner {
         thresholds = _thresholds;
         checkthresholds = flag;
     }
@@ -271,15 +229,14 @@ contract ClaimToken is Ownable2Step, ReentrancyGuard {
     /**
      * @notice Sets signer.
      */
-    function setSigner(address cosigner, bool flag) external onlyOwner {
-        signers[cosigner] = flag;
+    function setSigner(address _signer, bool flag) external onlyOwner {
+        signers[_signer] = flag;
     }
 
     /**
      * @notice Refund of tokens mistakenly transferred.
      */
-    function withdrawsToken(uint32 tindex, address to) external onlyOwner {
-        address token = tokens[tindex];
+    function withdrawsToken(address token, address to) external onlyOwner {
         uint256 balance = ERC20(token).balanceOf(address(this));
         SafeTransferLib.safeTransfer(ERC20(token), to, balance);
     }
