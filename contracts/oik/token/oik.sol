@@ -3,14 +3,14 @@ pragma solidity 0.8.19;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /**
  * @title OIK Token Contract
  * @author
  * @notice Implements an ERC20 token including minting, burning functions.
  */
-contract OIK is ERC20, ERC20Burnable, Ownable {
+contract OIK is ERC20, ERC20Burnable, Ownable2Step {
     /**
      * @notice The maximum supply of the token
      */

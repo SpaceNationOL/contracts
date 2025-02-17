@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.19;
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/access/Ownable2Step.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "solmate/src/utils/SafeTransferLib.sol";
@@ -12,7 +12,7 @@ import "solmate/src/tokens/ERC20.sol";
  * @author @SpaceNation
  * @notice Space Nation claim tokens
  */
-contract ClaimToken is Ownable, ReentrancyGuard {
+contract ClaimToken is Ownable2Step, ReentrancyGuard {
     using ECDSA for bytes32;
 
     uint256 private thresholds;
@@ -262,10 +262,6 @@ contract ClaimToken is Ownable, ReentrancyGuard {
      */
     function setSigner(address cosigner, bool flag) external onlyOwner {
         signers[cosigner] = flag;
-    }
-
-    function renounceOwnership() public view override onlyOwner {
-        revert("CLOSED");
     }
 
     /**
