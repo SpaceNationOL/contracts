@@ -13,12 +13,13 @@ import "solmate/src/tokens/ERC20.sol";
  */
 contract ClaimToken is Ownable2Step {
     using ECDSA for bytes32;
-    uint256 private thresholds;
+    uint8 public decimals;
+    uint64 private thresholds;
     bool private checkthresholds;
 
     mapping(address => bool) public tokens;
     mapping(address => uint64) public nonces;
-    mapping(address => mapping(address => uint256)) private claimed;
+    mapping(address => mapping(address => uint64)) private claimed;
     mapping(address => bool) private signers;
     mapping(bytes => bool) private signatures;
 
@@ -26,10 +27,10 @@ contract ClaimToken is Ownable2Step {
         address token,
         address sender,
         uint64 nonce,
-        uint256 amount,
+        uint64 amount,
         bytes sig
     );
-    event Transfer(address token, address[] player, uint256[] amount);
+    event Transfer(address token, address[] player, uint64[] amount);
 
     error InvalidSignaturesOrAmounts();
     error InvalidSignature();
@@ -40,7 +41,8 @@ contract ClaimToken is Ownable2Step {
     constructor(
         address[] memory _signers,
         address _token,
-        uint64 _thresholds
+        uint64 _thresholds,
+        uint8 _decimals
     ) {
         require(_token != address(0));
         address signer;
@@ -54,6 +56,7 @@ contract ClaimToken is Ownable2Step {
         }
         tokens[_token] = true;
         thresholds = _thresholds;
+        decimals = _decimals;
     }
 
     /**
@@ -76,6 +79,10 @@ contract ClaimToken is Ownable2Step {
         }
     }
 
+    function setDecimals(uint8 _decimals) external onlyOwner {
+        decimals = _decimals;
+    }
+
     /**
      * @notice Only the contract owner can airdrop tokens
      * @param token. The token address.
@@ -87,13 +94,13 @@ contract ClaimToken is Ownable2Step {
         address token,
         address wallet,
         address[] calldata players,
-        uint256[] calldata amounts
+        uint64[] calldata amounts
     ) external onlyOwner {
         uint256 len = players.length;
         if (amounts.length != len) {
             revert InvalidArray();
         }
-        uint256 amount;
+        uint64 amount;
         address player;
         unchecked {
             for (uint256 i = 0; i < len; ++i) {
@@ -116,7 +123,7 @@ contract ClaimToken is Ownable2Step {
     function claim(
         address token,
         address wallet,
-        uint256 amount,
+        uint64 amount,
         bytes memory sig
     ) external {
         if (checkthresholds && amount > thresholds) {
@@ -141,7 +148,7 @@ contract ClaimToken is Ownable2Step {
     function bigClaim(
         address token,
         address wallet,
-        uint256 amount,
+        uint64 amount,
         bytes[] calldata sigs
     ) external {
         uint256 len = sigs.length;
@@ -170,12 +177,17 @@ contract ClaimToken is Ownable2Step {
         address token,
         address from,
         address to,
-        uint256 amount
+        uint64 amount
     ) private {
         if (!tokens[token]) {
             revert InvalidToken();
         }
-        SafeTransferLib.safeTransferFrom(ERC20(token), from, to, amount);
+        SafeTransferLib.safeTransferFrom(
+            ERC20(token),
+            from,
+            to,
+            amount * 10**decimals
+        );
     }
 
     function _chainID() private view returns (uint64) {
@@ -190,7 +202,7 @@ contract ClaimToken is Ownable2Step {
         address token,
         address sender,
         address wallet,
-        uint256 amount,
+        uint64 amount,
         bytes memory sig
     ) private {
         if (signatures[sig]) {
@@ -224,7 +236,7 @@ contract ClaimToken is Ownable2Step {
     /**
      * @notice Sets threshold.
      */
-    function setThresholds(uint256 _thresholds, bool flag) external onlyOwner {
+    function setThresholds(uint64 _thresholds, bool flag) external onlyOwner {
         require(_thresholds != 0);
         thresholds = _thresholds;
         checkthresholds = flag;
