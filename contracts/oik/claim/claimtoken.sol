@@ -19,7 +19,7 @@ contract ClaimToken is Ownable2Step {
 
     mapping(address => bool) public tokens;
     mapping(address => uint64) public nonces;
-    mapping(address => mapping(address => uint64)) private claimed;
+
     mapping(address => bool) private signers;
     mapping(bytes => bool) private signatures;
 
@@ -65,8 +65,8 @@ contract ClaimToken is Ownable2Step {
      * @param flag. The status of each token.
      */
     function configWLtokens(address[] calldata _tokens, bool flag)
-        external
-        onlyOwner
+    external
+    onlyOwner
     {
         uint256 len = _tokens.length;
         address token;
@@ -132,10 +132,10 @@ contract ClaimToken is Ownable2Step {
         address sender = _msgSender();
         assertValidCosign(token, sender, wallet, amount, sig);
 
-        claimed[token][sender] += amount;
+        uint64 nonce = nonces[sender];
         ++nonces[sender];
         _transfer(token, wallet, sender, amount);
-        emit Claim(token, sender, nonces[sender], amount, sig);
+        emit Claim(token, sender, nonce, amount, sig);
     }
 
     /**
@@ -158,7 +158,7 @@ contract ClaimToken is Ownable2Step {
         address sender = _msgSender();
         bytes memory sig;
         bytes memory siglog;
-
+        uint64 nonce = nonces[sender];
         unchecked {
             for (uint256 i = 0; i < len; ++i) {
                 sig = sigs[i];
@@ -167,10 +167,9 @@ contract ClaimToken is Ownable2Step {
             }
         }
 
-        claimed[token][sender] += amount;
         ++nonces[sender];
         _transfer(token, wallet, sender, amount);
-        emit Claim(token, sender, nonces[sender], amount, siglog);
+        emit Claim(token, sender, nonce, amount, siglog);
     }
 
     function _transfer(
