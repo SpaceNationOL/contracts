@@ -13,13 +13,14 @@ import "solmate/src/tokens/ERC20.sol";
  */
 contract ClaimToken is Ownable2Step {
     using ECDSA for bytes32;
+
+    address public token;
+    uint64 public thresholds;
     uint8 public decimals;
-    uint64 private thresholds;
+    uint8 public signumber;
     bool private checkthresholds;
 
-    mapping(address => bool) public tokens;
     mapping(address => uint64) public nonces;
-
     mapping(address => bool) private signers;
     mapping(bytes => bool) private signatures;
 
@@ -32,19 +33,21 @@ contract ClaimToken is Ownable2Step {
     );
     event Transfer(address token, address[] player, uint64[] amount);
 
-    error InvalidSignaturesOrAmounts();
     error InvalidSignature();
     error InvalidArray();
-    error InvalidToken();
     error DuplicatedSig();
+    error InvalidAmount();
 
     constructor(
         address[] memory _signers,
         address _token,
         uint64 _thresholds,
-        uint8 _decimals
+        uint8 _decimals,
+        uint8 _signumber
     ) {
         require(_token != address(0));
+        require(_thresholds != 0);
+        require(_signumber > 1);
         address signer;
         uint256 len = _signers.length;
         unchecked {
@@ -54,44 +57,19 @@ contract ClaimToken is Ownable2Step {
                 signers[signer] = true;
             }
         }
-        tokens[_token] = true;
+        token = _token;
         thresholds = _thresholds;
         decimals = _decimals;
-    }
-
-    /**
-     * @notice Only the contract owner address can configure the white list of the tokens address.
-     * @param _tokens. Token  address.
-     * @param flag. The status of each token.
-     */
-    function configWLtokens(address[] calldata _tokens, bool flag)
-    external
-    onlyOwner
-    {
-        uint256 len = _tokens.length;
-        address token;
-        unchecked {
-            for (uint256 i = 0; i < len; ++i) {
-                token = _tokens[i];
-                require(token != address(0));
-                tokens[token] = flag;
-            }
-        }
-    }
-
-    function setDecimals(uint8 _decimals) external onlyOwner {
-        decimals = _decimals;
+        signumber = _signumber;
     }
 
     /**
      * @notice Only the contract owner can airdrop tokens
-     * @param token. The token address.
      * @param wallet. The token wallet address.
      * @param players. Array of airdrop addresses.
      * @param amounts. Array of airdrop amounts corresponding to each address.
      */
     function transfer(
-        address token,
         address wallet,
         address[] calldata players,
         uint64[] calldata amounts
@@ -107,7 +85,7 @@ contract ClaimToken is Ownable2Step {
                 amount = amounts[i];
                 player = players[i];
 
-                _transfer(token, wallet, player, amount);
+                _transfer(wallet, player, amount);
             }
         }
         emit Transfer(token, players, amounts);
@@ -115,72 +93,66 @@ contract ClaimToken is Ownable2Step {
 
     /**
      * @notice Users claim tokens through a valid signature.
-     * @param amount. Amount of tokens claimed by the user.
      * @param wallet. The token wallet address.
-     * @param token. The token address.
+     * @param amount. Amount of tokens claimed by the user.
      * @param sig. Signature generated off-chain based on the user's claim information.
      */
     function claim(
-        address token,
         address wallet,
         uint64 amount,
         bytes memory sig
     ) external {
         if (checkthresholds && amount > thresholds) {
-            revert();
+            revert InvalidAmount();
         }
         address sender = _msgSender();
-        assertValidCosign(token, sender, wallet, amount, sig);
+        assertValidCosign(sender, wallet, amount, sig);
 
         uint64 nonce = nonces[sender];
         ++nonces[sender];
-        _transfer(token, wallet, sender, amount);
+        _transfer(wallet, sender, amount);
         emit Claim(token, sender, nonce, amount, sig);
     }
 
     /**
      * @notice Users claim tokens through some signatures.
-     * @param amount. Amount of tokens claimed by the user.
      * @param wallet. The token wallet addresses.
-     * @param token. The token address.
+     * @param amount. Amount of tokens claimed by the user.
      * @param sigs. Signatures generated off-chain based on the user's claim information.
      */
     function bigClaim(
-        address token,
         address wallet,
         uint64 amount,
         bytes[] calldata sigs
     ) external {
-        uint256 len = sigs.length;
-        if (len < 2 || amount < thresholds) {
-            revert InvalidSignaturesOrAmounts();
+        if (signumber != sigs.length) {
+            revert InvalidArray();
+        }
+        if (amount < thresholds) {
+            revert InvalidAmount();
         }
         address sender = _msgSender();
         bytes memory sig;
         bytes memory siglog;
         uint64 nonce = nonces[sender];
         unchecked {
-            for (uint256 i = 0; i < len; ++i) {
+            for (uint256 i = 0; i < signumber; ++i) {
                 sig = sigs[i];
                 siglog = bytes.concat(siglog, sig);
-                assertValidCosign(token, sender, wallet, amount, sig);
+                assertValidCosign(sender, wallet, amount, sig);
             }
         }
 
         ++nonces[sender];
-        _transfer(token, wallet, sender, amount);
+        _transfer(wallet, sender, amount);
         emit Claim(token, sender, nonce, amount, siglog);
     }
 
     function _transfer(
-        address token,
         address from,
         address to,
         uint64 amount
     ) private {
-        if (!tokens[token]) {
-            revert InvalidToken();
-        }
         SafeTransferLib.safeTransferFrom(
             ERC20(token),
             from,
@@ -198,7 +170,6 @@ contract ClaimToken is Ownable2Step {
     }
 
     function assertValidCosign(
-        address token,
         address sender,
         address wallet,
         uint64 amount,
@@ -207,12 +178,10 @@ contract ClaimToken is Ownable2Step {
         if (signatures[sig]) {
             revert DuplicatedSig();
         }
-
-        uint64 nonce = nonces[sender];
         bytes32 hash = keccak256(
             abi.encodePacked(
                 amount,
-                nonce,
+                nonces[sender],
                 _chainID(),
                 token,
                 sender,
@@ -233,12 +202,42 @@ contract ClaimToken is Ownable2Step {
     }
 
     /**
+     * @notice Only the contract owner address can configure the token address.
+     * @param _token. Token  address.
+     */
+    function setToken(address _token) external onlyOwner {
+        require(_token != address(0));
+        token = _token;
+    }
+
+    /**
+     * @notice Sets signatures number.
+     */
+    function setSigNumber(uint8 _signumber) external onlyOwner {
+        require(_signumber > 1);
+        signumber = _signumber;
+    }
+
+    /**
      * @notice Sets threshold.
      */
-    function setThresholds(uint64 _thresholds, bool flag) external onlyOwner {
+    function setThresholds(uint64 _thresholds) external onlyOwner {
         require(_thresholds != 0);
         thresholds = _thresholds;
+    }
+
+    /**
+     * @notice Sets threshold switch.
+     */
+    function setThresholds(bool flag) external onlyOwner {
         checkthresholds = flag;
+    }
+
+    /**
+     * @notice Sets decimals.
+     */
+    function setDecimals(uint8 _decimals) external onlyOwner {
+        decimals = _decimals;
     }
 
     /**
@@ -251,7 +250,7 @@ contract ClaimToken is Ownable2Step {
     /**
      * @notice Refund of tokens mistakenly transferred.
      */
-    function withdrawsToken(address token, address to) external onlyOwner {
+    function withdrawsToken(address to) external onlyOwner {
         uint256 balance = ERC20(token).balanceOf(address(this));
         SafeTransferLib.safeTransfer(ERC20(token), to, balance);
     }
