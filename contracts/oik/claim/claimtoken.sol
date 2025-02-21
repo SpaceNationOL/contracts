@@ -22,7 +22,7 @@ contract ClaimToken is Ownable2Step {
 
     mapping(address => uint64) public nonces;
     mapping(address => bool) private signers;
-    mapping(bytes => bool) private signatures;
+    mapping(bytes => bool) private usedsignatures;
     mapping(address => bool) public isBlackListed;
 
     event Claim(
@@ -178,7 +178,7 @@ contract ClaimToken is Ownable2Step {
         bytes memory sig
     ) private {
         require(!isBlackListed[sender]);
-        if (signatures[sig]) {
+        if (usedsignatures[sig]) {
             revert DuplicatedSig();
         }
         bytes32 hash = keccak256(
@@ -194,7 +194,7 @@ contract ClaimToken is Ownable2Step {
         );
         matchSigner(hash, sig);
 
-        signatures[sig] = true;
+        usedsignatures[sig] = true;
     }
 
     function matchSigner(bytes32 hash, bytes memory signature) private view {
@@ -216,12 +216,77 @@ contract ClaimToken is Ownable2Step {
         decimals = _decimals;
     }
 
-    function addBlackList(address _evilUser) external onlyOwner {
-        isBlackListed[_evilUser] = true;
+    /**
+     * @notice  Only the contract owner can add addresses to the blacklist.
+     * @param _evilUsers. Token address.
+     */
+    function addBlackList(address[] calldata _evilUsers) external onlyOwner {
+        uint256 len = _evilUsers.length;
+        address evilUser;
+
+        unchecked {
+            for (uint256 i = 0; i < len; ++i) {
+                evilUser = _evilUsers[i];
+                isBlackListed[evilUser] = true;
+            }
+        }
     }
 
-    function removeBlackList(address _clearedUser) external onlyOwner {
-        isBlackListed[_clearedUser] = false;
+    /**
+     * @notice  Only the contract owner can remove addresses from the blacklist.
+     * @param _clearedUsers. Token address.
+     */
+    function removeBlackList(address[] calldata _clearedUsers)
+    external
+    onlyOwner
+    {
+        uint256 len = _clearedUsers.length;
+        address clearUser;
+
+        unchecked {
+            for (uint256 i = 0; i < len; ++i) {
+                clearUser = _clearedUsers[i];
+                isBlackListed[clearUser] = false;
+            }
+        }
+    }
+
+    /**
+     * @notice Only the contract owner can invalidate specific signatures.
+     * @param signatures. Signatures.
+     */
+    function invalidateUnusedSignature(bytes[] calldata signatures)
+    external
+    onlyOwner
+    {
+        uint256 len = signatures.length;
+        bytes memory evilSignature;
+
+        unchecked {
+            for (uint256 i = 0; i < len; ++i) {
+                evilSignature = signatures[i];
+                usedsignatures[evilSignature] = true;
+            }
+        }
+    }
+
+    /**
+     * @notice Only the contract owner can increment a batch of users' nonce values to invalidate old signatures.
+     * @param addrs. Player's addresses.
+     */
+    function invalidateUnusedNonce(address[] calldata addrs)
+    external
+    onlyOwner
+    {
+        uint256 len = addrs.length;
+        address addr;
+
+        unchecked {
+            for (uint256 i = 0; i < len; ++i) {
+                addr = addrs[i];
+                ++nonces[addr];
+            }
+        }
     }
 
     /**
