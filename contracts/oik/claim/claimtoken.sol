@@ -23,6 +23,7 @@ contract ClaimToken is Ownable2Step {
     mapping(address => uint64) public nonces;
     mapping(address => bool) private signers;
     mapping(bytes => bool) private signatures;
+    mapping(address => bool) public isBlackListed;
 
     event Claim(
         address token,
@@ -176,6 +177,7 @@ contract ClaimToken is Ownable2Step {
         uint64 amount,
         bytes memory sig
     ) private {
+        require(!isBlackListed[sender]);
         if (signatures[sig]) {
             revert DuplicatedSig();
         }
@@ -212,6 +214,14 @@ contract ClaimToken is Ownable2Step {
         require(_decimals < 19);
         token = _token;
         decimals = _decimals;
+    }
+
+    function addBlackList(address _evilUser) external onlyOwner {
+        isBlackListed[_evilUser] = true;
+    }
+
+    function removeBlackList(address _clearedUser) external onlyOwner {
+        isBlackListed[_clearedUser] = false;
     }
 
     /**
