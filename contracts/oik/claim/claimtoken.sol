@@ -46,6 +46,7 @@ contract ClaimToken is Ownable2Step {
         uint8 _signumber
     ) {
         require(_token != address(0));
+        require(_decimals < 19);
         require(_thresholds != 0);
         require(_signumber > 1);
         address signer;
@@ -202,12 +203,15 @@ contract ClaimToken is Ownable2Step {
     }
 
     /**
-     * @notice Only the contract owner address can configure the token address.
+     * @notice Only the contract owner address can configure the token address and decimals.
      * @param _token. Token  address.
+     * @param _decimals. Token  decimals.
      */
-    function setToken(address _token) external onlyOwner {
+    function setToken(address _token, uint8 _decimals) external onlyOwner {
         require(_token != address(0));
+        require(_decimals < 19);
         token = _token;
+        decimals = _decimals;
     }
 
     /**
@@ -231,13 +235,6 @@ contract ClaimToken is Ownable2Step {
      */
     function setThresholds(bool flag) external onlyOwner {
         checkthresholds = flag;
-    }
-
-    /**
-     * @notice Sets decimals.
-     */
-    function setDecimals(uint8 _decimals) external onlyOwner {
-        decimals = _decimals;
     }
 
     /**
