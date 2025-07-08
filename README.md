@@ -19,8 +19,9 @@
 
 ### ERC-20
   - Deployment
-    - [0x6e7f11641c1ec71591828e531334192d622703f7](https://etherscan.io/token/0x6e7f11641c1ec71591828e531334192d622703f7)
-    - [0xdA49591f442B8c7A5292C6Aa07655746299D6F4C](https://explorer.immutable.com/token/0xdA49591f442B8c7A5292C6Aa07655746299D6F4C)
+    - Ethereum Mainnet: [0x6e7f11641c1ec71591828e531334192d622703f7](https://etherscan.io/token/0x6e7f11641c1ec71591828e531334192d622703f7)
+    - Immutable zkEVM: [0xdA49591f442B8c7A5292C6Aa07655746299D6F4C](https://explorer.immutable.com/token/0xdA49591f442B8c7A5292C6Aa07655746299D6F4C)
+    - BNB Smart Chain: [0xb035723d62e0e2ea7499d76355c9d560f13ba404](https://bscscan.com/address/0xb035723d62e0e2ea7499d76355c9d560f13ba404)
   - [Source Code](https://raw.githubusercontent.com/SpaceNationOL/contracts/main/contracts/oik/token/oik.sol)
   - [Security Audit Report](https://certificate.quantstamp.com/full/space-nation/5d822db3-b54a-4c1e-9eff-0e0b685e8e4f/index.html)
 
